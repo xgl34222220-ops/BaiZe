@@ -488,7 +488,9 @@ run_parallel_pair() {
   TASK_EXECUTED=1
   handle_task_result "$cache_code" cache "$pc_kind" "$pc_cycle" "$pc_request" "$cache_log"
   handle_task_result "$organize_code" organize "$po_kind" "$po_cycle" "$po_request" "$organize_log"
-  if [ "$cache_code" -eq 0 ] && [ "$organize_code" -eq 0 ]; then
+  # 10 = finished with some items left in place; it is a completed run, not an anomaly.
+  if { [ "$cache_code" -eq 0 ] || [ "$cache_code" -eq "$TASK_PARTIAL_EXIT" ]; } &&
+     { [ "$organize_code" -eq 0 ] || [ "$organize_code" -eq "$TASK_PARTIAL_EXIT" ]; }; then
     write_scheduler_state completed "cache+organize" "2 项兼容任务已并行完成"
   else
     write_scheduler_state waiting "cache+organize" "并行批次部分完成，异常任务将自动恢复"

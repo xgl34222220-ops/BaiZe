@@ -253,6 +253,7 @@ deleted_files=0
 deleted_bytes=0
 errors=0
 skipped=0
+media_record_stopped=0
 code=0
 
 while IFS= read -r -d '' target && IFS= read -r -d '' expected_identity <&3; do
@@ -298,8 +299,10 @@ while IFS= read -r -d '' target && IFS= read -r -d '' expected_identity <&3; do
       deleted_bytes=$((deleted_bytes + size))
       printf 'cleaned\tlow\tAPK安装包\t1\t%s\t%s\n' "$size" "$target" >>"$REPORT_FILE"
       if [ "$delete_code" -eq 70 ]; then
+        # 70 = the file WAS deleted, only its media-refresh record could not be written.
+        # Not a failed item; stop this round so later deletions are not left unrecorded.
         BAIZE_CLEANUP_MEDIA_UNCONFIRMED=1
-        errors=$((errors + 1))
+        media_record_stopped=1
         break
       fi
       ;;
@@ -331,9 +334,10 @@ end=$(date +%s)
 elapsed=$((end - START_EPOCH))
 if [ "$code" -eq 9 ]; then
   result="安装包快照清理已停止，已释放 $(human_bytes "$deleted_bytes")"
-elif [ "$errors" -gt 0 ] || [ "$skipped" -gt 0 ]; then
+elif [ "$errors" -gt 0 ] || [ "$skipped" -gt 0 ] || [ "$media_record_stopped" = 1 ]; then
   code=8
   result="安装包清理未完全生效：删除 $deleted_files 个，跳过 $skipped 个，失败 $errors 个，释放 $(human_bytes "$deleted_bytes")；将重新扫描核对"
+  [ "$media_record_stopped" = 1 ] && result="$result；媒体刷新记录无法写入，本轮已提前停止"
 else
   result="安装包清理完成：删除 $deleted_files 个，跳过 0 个，失败 0 个，释放 $(human_bytes "$deleted_bytes")"
   rm -f "$STATE_FILE" "$TARGETS_FILE" "$IDENTITIES_FILE"

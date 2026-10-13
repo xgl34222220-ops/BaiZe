@@ -115,6 +115,7 @@ internal class RunDetailRepository(
         path == RootPaths.STATE_DIR || path.startsWith(RootPaths.STATE_DIR + "/") ||
             path.startsWith("/data/adb/") -> "这是白泽模块自身的数据，不能从记录页删除"
         path.contains("/.baize-quarantine") -> "这是隔离区内部文件，请到回收站处理"
+        isCriticalRoot(path) -> "这是存储根目录、系统文件夹或整个应用数据目录，不能从记录页整体删除"
         !quarantine.allowedOriginalPath(path) -> "系统目录或路径已变化，为安全起见不处理"
         else -> null
     }
@@ -201,6 +202,25 @@ internal class RunDetailRepository(
         path.none { it == '\u0000' || it == '\n' || it == '\r' } && path.split('/').none { it == ".." }
 
     companion object {
+        /**
+         * Skipped rows can name whole directories (an unreadable /data/media, a slow Download
+         * folder). Those are listed for information only: deleting or quarantining a volume
+         * root, a standard shared folder or an app's entire data directory is never offered.
+         */
+        private val VOLUME = "(?:/data/media/[0-9]+|/storage/emulated/[0-9]+|/storage/self/primary|/sdcard|/mnt/user/[0-9]+/emulated/[0-9]+|/storage/[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}|/mnt/media_rw/[^/]+)"
+        private val CRITICAL_ROOTS = listOf(
+            Regex("^/(?:data|data/media|data/data|data/user|data/user_de|data/app|data/local|data/misc|data/system|storage|storage/emulated|storage/self|mnt|mnt/user|mnt/media_rw|cache)?$"),
+            Regex("^/(?:data/user|data/user_de|mnt/user)/[0-9]+$"),
+            Regex("^/(?:data/data|data/user/[0-9]+|data/user_de/[0-9]+)/[^/]+$"),
+            Regex("^$VOLUME$"),
+            Regex("^$VOLUME/(?:Android|DCIM|Download|Downloads|Pictures|Movies|Music|Documents|Alarms|Notifications|Podcasts|Ringtones|Audiobooks|Recordings)$", RegexOption.IGNORE_CASE),
+            Regex("^$VOLUME/Android/(?:data|obb|media)$", RegexOption.IGNORE_CASE)
+        )
+        internal fun isCriticalRoot(path: String): Boolean {
+            val normalized = path.trimEnd('/').ifEmpty { "/" }
+            return CRITICAL_ROOTS.any { it.matches(normalized) }
+        }
+
         private val LOCK = Any()
         const val MAX_ROWS = 300
         private const val MAX_FILE_BYTES = 1L * 1024 * 1024
