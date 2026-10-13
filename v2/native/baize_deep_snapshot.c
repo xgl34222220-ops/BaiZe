@@ -853,8 +853,13 @@ static int clean_manifest(void) {
                 if (hash_code == 7) {
                     summary.skipped++;
                     report_row(report, "changed", risk, size, path);
+                } else if (hash_code == 124) {
+                    /* Identity check ran out of time: nothing was deleted. Keep the file and
+                     * move on (slow skip); stopping here stalled every later run at this item. */
+                    summary.skipped++;
+                    report_row(report, "protected", "timeout", 0U, path);
                 } else {
-                    if (hash_code != 9) note_failure(hash_code == 124 ? ETIMEDOUT : EIO, path);
+                    if (hash_code != 9) note_failure(EIO, path);
                     attempt_errors++; result = hash_code == 9 ? 9 : 8;
                     report_row(report, "failed", risk, 0U, path);
                 }

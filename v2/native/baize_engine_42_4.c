@@ -1442,14 +1442,19 @@ static int clean_cache_snapshot(const Options *o) {
             if (hash_code == 0 || hash_code == 7) {
                 totals.skipped++; totals.protected_items++; outcome->changed++;
                 report_row(report, "changed", "low", category, 1, size, path);
+            } else if (hash_code == 124) {
+                /* Identity check ran out of time (slow file or task budget): nothing was
+                 * deleted, so the file is kept and listed as a slow skip, not a failure. */
+                totals.skipped++; totals.protected_items++; outcome->protected++;
+                report_row(report, "protected", "timeout", category, 1, 0, path);
             } else {
-                if (hash_code != 9) note_clean_failure(hash_code == 124 ? ETIMEDOUT : EIO, path);
+                if (hash_code != 9) note_clean_failure(EIO, path);
                 totals.errors++; outcome->failed++; result = hash_code == 9 ? 9 : 8;
                 report_row(report, "failed", "low", category, 1, 0, path);
             }
             if (content_fd >= 0) close(content_fd);
             close(parent_fd); free(parent_storage);
-            if (hash_code == 9 || hash_code == 124) break;
+            if (hash_code == 9) break;
             continue;
         }
         if (fstatat(parent_fd, name, &second_stat, AT_SYMLINK_NOFOLLOW) != 0) {

@@ -96,6 +96,17 @@ class RunDetailRepositoryTest {
         assertTrue(real.exists()); assertTrue(Files.isSymbolicLink(link.toPath()))
     }
 
+    @Test fun storageRootsAndWholeAppDirectoriesAreNeverOffered() {
+        // A skipped "unreadable /data/media" or "slow Download" row is information only.
+        listOf("/", "/data", "/data/media", "/data/media/0", "/data/media/0/", "/storage/emulated/0",
+            "/sdcard/Download", "/storage/emulated/0/DCIM", "/data/media/0/Android/data", "/data/data",
+            "/data/data/com.tencent.mm", "/data/user/0/com.tencent.mm", "/storage/1A2B-3C4D", "/data/user/10")
+            .forEach { assertTrue(it, RunDetailRepository.isCriticalRoot(it)) }
+        listOf("/data/media/0/Download/a.apk", "/storage/emulated/0/Android/data/com.example/cache",
+            "/data/data/com.tencent.mm/cache", "/sdcard/Download/old", "/data/media/0/Tencent")
+            .forEach { assertFalse(it, RunDetailRepository.isCriticalRoot(it)) }
+    }
+
     @Test fun invalidOrExpiredDetailIdIsRejected() {
         val repository = setUp()
         assertTrue(JSONObject(repository.readJson("../history")).getBoolean("expired"))

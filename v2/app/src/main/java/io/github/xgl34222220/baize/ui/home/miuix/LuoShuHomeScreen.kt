@@ -206,14 +206,14 @@ private fun SpaceHero(state: DashboardUiState, actions: DashboardActions) {
     val label = when {
         state.running -> "当前任务"
         hasResults -> "本次可清理"
-        state.scanCompleted && state.scanErrors > 0 -> "扫描有异常"
+        state.scanCompleted && state.scanErrors > 0 -> "部分扫描未完成"
         state.scanCompleted -> "暂无待清理文件"
         else -> "可用空间"
     }
     val description = when {
         state.running -> state.taskPhase.ifBlank { "正在处理文件" }
-        hasResults -> "发现 ${state.scanFiles} 个可清理文件" + if (state.scanErrors > 0) " · ${state.scanErrors} 处未完成" else ""
-        state.scanCompleted && state.scanErrors > 0 -> "${state.scanErrors} 处扫描异常，请查看记录后重试"
+        hasResults -> "发现 ${state.scanFiles} 个可清理文件" + if (state.scanErrors > 0) " · ${state.scanErrors} 项未完成" else ""
+        state.scanCompleted && state.scanErrors > 0 -> "${state.scanErrors} 项扫描未完成，可稍后重新扫描"
         state.scanCompleted -> "本次扫描未发现可清理文件"
         state.connectionFailed -> state.serviceText
         state.storageTotal > 0 -> "已用 ${Formatter.formatFileSize(context, state.storageUsed)} · 共 ${Formatter.formatFileSize(context, state.storageTotal)}"
