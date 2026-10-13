@@ -13,7 +13,7 @@ command -v busybox >/dev/null 2>&1 && shells+=("busybox ash")
 
 seed() {
   S=$1
-  rm -rf "$S"; mkdir -p "$S/reports" "$S/logs" "$S/task-results"
+  rm -rf "$S"; mkdir -p "$S/reports" "$S/logs" "$S/task-results" "$S/run-details"
   echo keep >"$S/config.conf"; echo keep >"$S/whitelist.conf"; echo keep >"$S/history.tsv"
   echo keep >"$S/reports/latest.tsv"; echo keep >"$S/reports/apps-latest.tsv"; echo keep >"$S/logs/latest.log"
   # Simulate a year of daily runs of every task kind (≈ the shape that caused 1.29M files).
@@ -27,6 +27,7 @@ seed() {
     : >"$S/logs/worker-task$n.log"
     : >"$S/logs/cache-lane-task$n-run.log"
     : >"$S/task-results/task$n.env"
+    : >"$S/run-details/20260101-0000$n-rules-clean-1.tsv"
   done
   # Newest files must survive: give a known file the latest mtime.
   touch -d '2030-01-01' "$S/reports/2026-01-01_00-00-400-cache-clean.tsv" "$S/logs/2026-01-01_00-00-400-cache-clean.log" 2>/dev/null || true
@@ -50,6 +51,7 @@ for SH in "${shells[@]}"; do
   [ "$(count "$S/logs" 'worker-*.log')" -le 200 ] || fail "$SH worker logs cap"
   [ "$(count "$S/logs" 'cache-lane-*')" -le 200 ] || fail "$SH lane logs cap"
   [ "$(count "$S/task-results" '*.env')" -le 200 ] || fail "$SH task results cap"
+  [ "$(count "$S/run-details" '*.tsv')" -le 30 ] || fail "$SH run details cap"
   for keep in config.conf whitelist.conf history.tsv reports/latest.tsv reports/apps-latest.tsv logs/latest.log logs/state-migrate.log; do
     [ -f "$S/$keep" ] || fail "$SH removed $keep"
   done

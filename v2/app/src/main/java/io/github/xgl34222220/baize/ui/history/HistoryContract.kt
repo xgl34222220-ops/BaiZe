@@ -73,7 +73,9 @@ data class HistoryUiActions(
     /** 回收站（FileTrashActivity，页内可切换到隔离区）。记录 Tab 是它的固定入口。 */
     val onOpenTrash: () -> Unit = {},
     /** 清理审计与规则质量（AuditActivity）。唯一入口；不在 HistoryRoute 里直接构造 Intent。 */
-    val onOpenAudit: () -> Unit = {}
+    val onOpenAudit: () -> Unit = {},
+    /** 记录详情页：逐项列出未删除的项目并可处理。 */
+    val onOpenRecordDetail: (HistoryUiItem) -> Unit = {}
 )
 
 fun DashboardUiState.toHistoryUiState(): HistoryUiState {

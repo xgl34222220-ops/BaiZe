@@ -20,7 +20,8 @@ fun HistoryRoute(
         onClearHistory = dashboardActions.clearHistory,
         onReviewProtected = dashboardActions.reviewProtected,
         onOpenTrash = dashboardActions.fileTrash,
-        onOpenAudit = dashboardActions.cleanupAudit
+        onOpenAudit = dashboardActions.cleanupAudit,
+        onOpenRecordDetail = dashboardActions.recordDetail
     )
 
     // 两种皮肤共用同一个记录页（原 Material 专用的 VideoHistoryScreenMiuix 已删除），差异只来自 VideoSkin。

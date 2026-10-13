@@ -200,14 +200,21 @@ class Rules(unittest.TestCase):
                 env.update(BAIZE_STATE_DIR=str(state), PATH=str(fake) + ':' + env['PATH'])
                 result = subprocess.run(['bash', str(module / 'cleaner.sh'), 'rules-clean', 'manual'],
                                         env=env, text=True, capture_output=True, timeout=30)
-                self.assertEqual(result.returncode, 9 if exit_code == 9 else 8, result.stdout + result.stderr)
+                # 3.3.4: a timed-out traversal (124) is a slow-directory skip; any other collector
+                # failure is an unreadable-directory skip. BaiZe deleted nothing in either case, so
+                # neither is a failure (no exit 10, errors=0). Neither consumes the partial list.
+                expected = {9: 9}.get(exit_code, 0)
+                self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
                 self.assertTrue(first.is_dir()); self.assertTrue(second.is_dir())
                 latest = (state / 'latest.env').read_text()
                 self.assertIn('empty_dirs=0\n', latest)
-                if exit_code != 9:
-                    self.assertIn('errors=1\n', latest)
+                if exit_code == 124:
+                    self.assertIn('errors=0\n', latest)
+                    self.assertIn('skipped\tslow\t空目录:', (state / 'reports/latest.tsv').read_text())
+                elif exit_code != 9:
+                    self.assertIn('errors=0\n', latest)
                     self.assertIn('cache_truncated=1\n', latest)
-                    self.assertIn('protected\tincomplete\t空目录:', (state / 'reports/latest.tsv').read_text())
+                    self.assertIn('skipped\tincomplete\t空目录:', (state / 'reports/latest.tsv').read_text())
 
     def test_real_rules_clean_native_and_fallback_preserve_content(self):
         source = (ROOT / 'v2/module/scripts/cleaner-compat.sh').read_text()

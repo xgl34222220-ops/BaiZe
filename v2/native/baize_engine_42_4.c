@@ -467,6 +467,40 @@ static void report_row(FILE *f, const char *a, const char *r, const char *c, uin
     sanitize(pp);
     fprintf(f, "%s\t%s\t%s\t%" PRIu64 "\t%" PRIu64 "\t%s\n", a, r, cc, items, bytes, pp);
 }
+/* Optional per-item failure list for the task detail page: BAIZE_FAILURE_ITEMS names a
+ * file that receives "path<TAB>reason" for each real deletion failure. Bounded by count
+ * (BAIZE_FAILURE_ITEMS_MAX, default 200) and size, so a broken volume cannot grow it. */
+static void append_failure_item(int error, const char *path) {
+    static long written = 0;
+    const char *target = getenv("BAIZE_FAILURE_ITEMS");
+    if (!target || !*target || !path) return;
+    const char *limit_text = getenv("BAIZE_FAILURE_ITEMS_MAX");
+    long limit = limit_text && *limit_text ? strtol(limit_text, NULL, 10) : 200;
+    if (limit <= 0 || limit > 1000) limit = 200;
+    if (written >= limit) return;
+    FILE *list = fopen(target, "a");
+    if (!list) return;
+    if (!fseek(list, 0, SEEK_END) && ftell(list) < 262144) {
+        char line[4096];
+        snprintf(line, sizeof(line), "%s", path);
+        for (char *c = line; *c; c++) if (*c == '\n' || *c == '\r' || *c == '\t') *c = ' ';
+        fprintf(list, "%s\t%s\n", line, strerror(error ? error : EIO));
+        written++;
+    }
+    fclose(list);
+}
+static char g_clean_failure_path[PATH_MAX];
+static char g_clean_failure_reason[128];
+static void sanitize(char *s);
+/* First real deletion failure of a snapshot clean, surfaced in the task record. */
+static void note_clean_failure(int error, const char *path) {
+    append_failure_item(error, path);
+    if (g_clean_failure_path[0]) return;
+    snprintf(g_clean_failure_path, sizeof(g_clean_failure_path), "%s", path ? path : "");
+    snprintf(g_clean_failure_reason, sizeof(g_clean_failure_reason), "%s", strerror(error ? error : EIO));
+    sanitize(g_clean_failure_path);
+    sanitize(g_clean_failure_reason);
+}
 static void write_summary_path(const char *path, const Totals *t) {
     if (!path) return;
     FILE *f = fopen(path, "w");
@@ -491,6 +525,8 @@ static void write_summary_path(const char *path, const Totals *t) {
         (uint64_t)g_whitelist.n, g_whitelist_index_queries,
         g_whitelist_ancestor_hits, g_whitelist_descendant_hits,
         g_whitelist_pruned_subtrees, elapsed_ms, throughput, ENGINE_VERSION);
+    if (g_clean_failure_path[0])
+        fprintf(f, "failure_reason=%s\nfailure_path=%s\n", g_clean_failure_reason, g_clean_failure_path);
     fclose(f);
 }
 static void write_summary(const Options *o, const Totals *t) {
@@ -1369,6 +1405,7 @@ static int clean_cache_snapshot(const Options *o) {
                 totals.skipped++; totals.protected_items++; outcome->changed++;
                 report_row(report, "changed", "low", category, 1, size, path);
             } else {
+                note_clean_failure(errno, path);
                 totals.errors++; outcome->failed++; result = 8;
                 report_row(report, "failed", "low", category, 1, 0, path);
             }
@@ -1382,6 +1419,7 @@ static int clean_cache_snapshot(const Options *o) {
                 totals.skipped++; outcome->missing++;
                 report_row(report, "missing", "low", category, 1, 0, path);
             } else {
+                note_clean_failure(errno, path);
                 totals.errors++; outcome->failed++; result = 8;
                 report_row(report, "failed", "low", category, 1, 0, path);
             }
@@ -1405,6 +1443,7 @@ static int clean_cache_snapshot(const Options *o) {
                 totals.skipped++; totals.protected_items++; outcome->changed++;
                 report_row(report, "changed", "low", category, 1, size, path);
             } else {
+                if (hash_code != 9) note_clean_failure(hash_code == 124 ? ETIMEDOUT : EIO, path);
                 totals.errors++; outcome->failed++; result = hash_code == 9 ? 9 : 8;
                 report_row(report, "failed", "low", category, 1, 0, path);
             }
@@ -1418,6 +1457,7 @@ static int clean_cache_snapshot(const Options *o) {
                 totals.skipped++; outcome->missing++;
                 report_row(report, "missing", "low", category, 1, 0, path);
             } else {
+                note_clean_failure(errno, path);
                 totals.errors++; outcome->failed++; result = 8;
                 report_row(report, "failed", "low", category, 1, 0, path);
             }
@@ -1443,7 +1483,12 @@ static int clean_cache_snapshot(const Options *o) {
             if (deleted && fwrite(path, 1, strlen(path) + 1U, deleted) != strlen(path) + 1U) {
                 result = 71; close(content_fd); close(parent_fd); free(parent_storage); break;
             }
+        } else if (errno == ENOENT) {
+            /* The app removed its own cache between the identity check and unlink. */
+            totals.skipped++; outcome->missing++;
+            report_row(report, "missing", "low", category, 1, 0, path);
         } else {
+            note_clean_failure(errno, path);
             totals.errors++;
             outcome->failed++;
             result = 8;
@@ -1608,7 +1653,12 @@ static int collect_rule_files_rec(int parent, const char *name, const char *path
     int abort = walk_abort_now(o, deadline);
     if (abort) return abort;
     int fd = openat(parent, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    if (fd < 0) return 5;
+    if (fd < 0) {
+        /* A subdirectory that vanished, or was replaced by a file or symlink, after
+         * readdir has nothing left to collect. Only the walk root must exist. */
+        if (depth > 0U && (errno == ENOENT || errno == ENOTDIR || errno == ELOOP)) return 0;
+        return 5;
+    }
     struct stat root;
     if (fstat(fd, &root) != 0) { close(fd); return 5; }
     if (root.st_dev != device) { close(fd); return 0; }

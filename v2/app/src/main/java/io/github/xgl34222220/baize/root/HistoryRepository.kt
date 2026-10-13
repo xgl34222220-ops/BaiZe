@@ -25,12 +25,15 @@ internal class HistoryRepository(
         }.getOrDefault(emptyList())
 
         lines.forEach { raw ->
-            val columns = raw.split('\t', limit = 12)
+            val columns = raw.split('\t', limit = HistoryFailureDetails.SPLIT_LIMIT)
             if (columns.size < 7) return@forEach
             val mode = columns[1].trim()
             val rawBytes = columns[2].toLongOrNull()?.takeIf { it >= 0L }
             val bytes = rawBytes ?: 0L
             val cleaned = mode != "scan" && !mode.endsWith("-scan")
+            val trigger = columns.getOrNull(7)?.trim().orEmpty()
+            val outcome = HistoryFailureDetails.outcome(mode, columns[5].toLongOrNull() ?: 0L,
+                columns.getOrNull(HistoryFailureDetails.COLUMN).orEmpty(), trigger)
             val release = if (columns.getOrNull(10).orEmpty().isNotBlank()) ReleaseAmount.fromEvent(JSONObject()
                 .put("operation", mode).put("releaseState", columns[10]).put("releasedBytes", rawBytes ?: JSONObject.NULL))
                 else ReleaseAmount.fromEvent(JSONObject().put("operation", mode).put("bytes", rawBytes ?: JSONObject.NULL))
@@ -47,11 +50,17 @@ internal class HistoryRepository(
                     .put("releaseState", release.state.wire)
                     .put("files", columns[3].toIntOrNull()?.coerceAtLeast(0) ?: 0)
                     .put("emptyDirs", columns[4].toIntOrNull()?.coerceAtLeast(0) ?: 0)
-                    .put("errors", columns[5].toIntOrNull()?.coerceAtLeast(0) ?: 0)
+                    // Only real failures (BaiZe tried to delete and could not). Skips are separate.
+                    .put("errors", outcome.failed.coerceAtMost(Int.MAX_VALUE.toLong()))
+                    .put("failed", outcome.failed)
+                    .put("skipped", outcome.skipped)
+                    .put("skipGroups", outcome.skipGroups)
+                    .put("detailId", outcome.detailId)
                     .put("result", columns[6].trim())
-                    .put("trigger", columns.getOrNull(7)?.trim().orEmpty())
+                    .put("trigger", trigger)
                     .put("categoryDetails", parseHistoryCategoryDetails(columns.getOrNull(8).orEmpty()))
                     .put("appDetails", parseHistoryAppDetails(columns.getOrNull(9).orEmpty()))
+                    .put("failureDetails", outcome.failureGroups)
                     .put("cleaned", cleaned)
             )
         }
@@ -95,6 +104,7 @@ internal class HistoryRepository(
         File(stateDir, "reports/latest.tsv").delete()
         File(stateDir, "reports/apps-latest.tsv").delete()
         File(stateDir, "reports/app-items-latest.tsv").delete()
+        File(stateDir, "run-details").listFiles()?.forEach { it.delete() }
         JSONObject().put("success", true).toString()
     }.getOrElse { error ->
         JSONObject().put("success", false).put("error", error.message ?: error.javaClass.simpleName).toString()
@@ -124,7 +134,8 @@ internal class HistoryRepository(
             .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(1000)
         val appSummary = input.optString("appSummary")
             .replace('\t', ' ').replace('\n', ' ').replace('\r', ' ').take(1000)
-        history.appendText("$timestamp\t$mode\t$bytes\t$files\t$emptyDirs\t$errors\t$result\tapp-native\t$categorySummary\t$appSummary\t${release.state.wire}\t$recordId\n")
+        val details = RunDetailWriter(stateDir).writeNative(mode, input, errors)
+        history.appendText("$timestamp\t$mode\t$bytes\t$files\t$emptyDirs\t$errors\t$result\tapp-native\t$categorySummary\t$appSummary\t${release.state.wire}\t$recordId\t$details\n")
         val retained = history.readLines().takeLast(100)
         RootFileStore.writeAtomic(history, retained.joinToString("\n", postfix = if (retained.isEmpty()) "" else "\n"))
 

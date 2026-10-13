@@ -107,6 +107,21 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+
+def history_failure_tokens(state):
+    """history.tsv column 13 (~v2 format): failed groups, skipped reasons, detail link."""
+    row = (state / 'history.tsv').read_text().splitlines()[-1].split('\t')
+    tokens = row[12].split(';')
+    assert tokens[0] == '~v2', row[12]
+    failed = [t.split('|', 3) for t in tokens if not t.startswith('~')]
+    detail = [t.split('|', 1)[1] for t in tokens if t.startswith('~detail|')]
+    items = []
+    if detail:
+        lines = (state / 'run-details' / f'{detail[0]}.tsv').read_text().splitlines()
+        items = [line.split('\t') for line in lines if not line.startswith('#')]
+    return row, failed, items
+
+
 class NativeCleanOutcomes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -541,6 +556,76 @@ class NativeCleanOutcomes(unittest.TestCase):
         latest = env_file(self.state / 'latest.env')
         self.assertEqual('1', latest['files'])
         self.assertEqual('0', latest['errors'])
+
+    # 3.3.4: a file removed by its owner between the identity check and unlink is
+    # "missing", never a failed task (badge 有异常 + scheduler retry on 3.3.3).
+    def test_cache_unlink_enoent_race_is_missing_not_failed(self):
+        _, files = self.cache_fixture()
+        result = self.cache_clean(('unlinkat', 'fault.bin', errno.ENOENT))
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        summary = env_file(self.state / 'clean.env')
+        self.assertEqual('0', summary['errors'])
+        self.assertIn('missing\t', (self.state / 'clean.tsv').read_text())
+        self.assertNotIn('failure_reason', summary)
+
+    def test_cache_real_failure_records_reason_and_path_in_history(self):
+        _, files = self.cache_fixture(('fault.bin', 'other.bin'))
+        result = self.cache_clean(('unlinkat', 'fault.bin', errno.EACCES), wrapper=True)
+        self.assertEqual(8, result.returncode, result.stdout + result.stderr)
+        row, failed, items = history_failure_tokens(self.state)
+        self.assertEqual(13, len(row), row)
+        self.assertEqual('1', row[5])
+        category, count, reason, sample = failed[0]
+        self.assertEqual(('1',), (count,))
+        self.assertEqual(os.strerror(errno.EACCES), reason)
+        self.assertTrue(sample.endswith('fault.bin'), sample)
+        # Per-item detail: the native engine listed the failed file with its errno text.
+        rows = [i for i in items if i[0] == 'failed']
+        self.assertEqual(1, len(rows), items)
+        self.assertTrue(rows[0][5].endswith('fault.bin'))
+        self.assertEqual(os.strerror(errno.EACCES), rows[0][6])
+        self.assertIn('原因：' + os.strerror(errno.EACCES), env_file(self.state / 'latest.env')['result'])
+
+    def test_rule_collection_skips_subdirectory_that_vanished_after_readdir(self):
+        root = self.media / '0/Rules'
+        (root / 'gone').mkdir(parents=True)
+        (root / 'gone/inner.log').write_bytes(b'x' * 9)
+        (root / 'keep.log').write_bytes(b'x' * 9)
+        old = time.time() - 30 * 86400
+        for path in (root / 'gone/inner.log', root / 'keep.log'):
+            os.utime(path, (old, old))
+        targets = self.state / 'rule.targets'
+        args = [self.engine, 'collect-rule-files', '--collection-root', root, '--targets', targets,
+                '--whitelist', self.whitelist, '--min-age-days', '1', '--max-file-bytes', '1048576']
+        result = self.run_command(args, ('openat', 'gone', errno.ENOENT))
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        collected = [p for p in targets.read_bytes().split(b'\0') if p]
+        self.assertEqual([os.fsencode(root / 'keep.log')], collected)
+        # A read failure that is not "vanished" still fails the directory, as before.
+        result = self.run_command(args, ('openat', 'gone', errno.EIO))
+        self.assertNotEqual(0, result.returncode)
+
+    def test_deep_unlink_enoent_race_is_missing_not_failed(self):
+        _, path = self.deep_fixture()
+        result = self.deep_clean(('unlinkat', 'fault.bin', errno.ENOENT))
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        summary = env_file(self.state / 'clean.env')
+        self.assertEqual('0', summary['errors'])
+        self.assertIn('missing\t', (self.state / 'clean.tsv').read_text())
+
+    def test_deep_real_failure_records_reason_and_path(self):
+        _, path = self.deep_fixture()
+        result = self.deep_clean(('unlinkat', 'fault.bin', errno.EPERM), wrapper=True)
+        self.assertEqual(8, result.returncode, result.stdout + result.stderr)
+        row, failed, items = history_failure_tokens(self.state)
+        self.assertEqual(13, len(row), row)
+        category, count, reason, sample = failed[0]
+        self.assertEqual(('1', os.strerror(errno.EPERM)), (count, reason))
+        self.assertEqual(str(path), sample)
+        rows = [i for i in items if i[0] == 'failed']
+        self.assertEqual([str(path)], [r[5] for r in rows], items)
+        self.assertEqual(os.strerror(errno.EPERM), rows[0][6])
+        self.assertIn('原因：' + os.strerror(errno.EPERM), env_file(self.state / 'latest.env')['result'])
 
     def test_deep_failure_after_success_commits_only_successful_prefix(self):
         root, _ = self.deep_fixture(('one.bin', 'two.bin'))

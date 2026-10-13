@@ -127,6 +127,7 @@ filter_processed_list "$STATE_DIR/list"
         module.mkdir(); state.mkdir(); data.mkdir()
         shutil.copytree(ROOT / 'config', module / 'config')
         shutil.copy(ROOT / 'v2/module/scripts/cleanup-media-queue.sh', module / 'cleanup-media-queue.sh')
+        shutil.copy(ROOT / 'v2/module/scripts/run-details.sh', module / 'run-details.sh')
         shutil.copy(ROOT / 'v2/module/scripts/cleaner.sh', module / 'cleaner.sh')
         shutil.copy(ROOT / 'v2/module/scripts/apk-paths.sh', module / 'apk-paths.sh')
         compat = re.sub(r'(?<![A-Za-z0-9_/])/data(?=/|\b|_)', str(data), SOURCE)
@@ -202,7 +203,7 @@ filter_processed_list "$STATE_DIR/list"
                 # cross the same conservative collection fence as real data.
                 time.sleep(2.05)
                 result = run(['bash', str(module / 'cleaner.sh'), 'clean', 'app'], env=env)
-                self.assertEqual(result.returncode, 0 if native else 8, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0 if native else 10, result.stdout + result.stderr)
                 for name in deleted:
                     self.assertEqual((data / name).exists(), not native, name + '\n' + result.stderr)
                 for name in protected:

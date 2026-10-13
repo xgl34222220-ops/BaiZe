@@ -399,7 +399,7 @@ internal class AuditRepository(
         if (!historyFile.isFile) return@runCatching emptyList()
         val occurrences = mutableMapOf<String, Int>()
         historyFile.readLines().takeLast(MAX_LEGACY).mapNotNull { raw ->
-            val columns = raw.split('\t', limit = 12)
+            val columns = raw.split('\t', limit = HistoryFailureDetails.SPLIT_LIMIT)
             if (columns.size < 7) return@mapNotNull null
             val time = sanitize(columns[0], 40)
             val epoch = runCatching { TIME_FORMAT.get().parse(time)?.time ?: 0L }.getOrDefault(0L)
@@ -409,9 +409,12 @@ internal class AuditRepository(
             val bytes = rawBytes ?: 0L
             val files = columns[3].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
             val directories = columns[4].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
-            val errors = columns[5].toLongOrNull()?.coerceAtLeast(0L) ?: 0L
             val message = sanitize(columns[6], 600)
             val source = sanitize(columns.getOrNull(7).orEmpty(), 100).ifBlank { "history" }
+            // Only real failures count as errors; protected / changed / unreadable items are skips.
+            val outcome = HistoryFailureDetails.outcome(operation, columns[5].toLongOrNull() ?: 0L,
+                columns.getOrNull(HistoryFailureDetails.COLUMN).orEmpty(), columns.getOrNull(7).orEmpty().trim())
+            val errors = outcome.failed
             val scan = operation == "scan" || operation.endsWith("-scan")
             val status = when {
                 errors > 0L -> "partial"
@@ -436,7 +439,7 @@ internal class AuditRepository(
                 .put("snapshotId", "")
                 .put("selected", files)
                 .put("processed", files)
-                .put("skipped", 0)
+                .put("skipped", outcome.skipped)
                 .put("protected", 0)
                 .put("bytes", rawBytes ?: JSONObject.NULL)
                 .put("files", files)

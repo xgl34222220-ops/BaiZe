@@ -712,6 +712,40 @@ static void report_row(FILE *file, const char *action, const char *risk, uint64_
             action, risk, bytes, clean);
 }
 
+/* Optional per-item failure list for the task detail page: BAIZE_FAILURE_ITEMS names a
+ * file that receives "path<TAB>reason" for each real deletion failure. Bounded by count
+ * (BAIZE_FAILURE_ITEMS_MAX, default 200) and size, so a broken volume cannot grow it. */
+static void append_failure_item(int error, const char *path) {
+    static long written = 0;
+    const char *target = getenv("BAIZE_FAILURE_ITEMS");
+    if (!target || !*target || !path) return;
+    const char *limit_text = getenv("BAIZE_FAILURE_ITEMS_MAX");
+    long limit = limit_text && *limit_text ? strtol(limit_text, NULL, 10) : 200;
+    if (limit <= 0 || limit > 1000) limit = 200;
+    if (written >= limit) return;
+    FILE *list = fopen(target, "a");
+    if (!list) return;
+    if (!fseek(list, 0, SEEK_END) && ftell(list) < 262144) {
+        char line[4096];
+        snprintf(line, sizeof(line), "%s", path);
+        for (char *c = line; *c; c++) if (*c == '\n' || *c == '\r' || *c == '\t') *c = ' ';
+        fprintf(list, "%s\t%s\n", line, strerror(error ? error : EIO));
+        written++;
+    }
+    fclose(list);
+}
+static char g_failure_path[PATH_MAX];
+static char g_failure_reason[128];
+/* First real failure of this run, for the task record ("which item, and why"). */
+static void note_failure(int error, const char *path) {
+    append_failure_item(error, path);
+    if (g_failure_path[0]) return;
+    snprintf(g_failure_path, sizeof(g_failure_path), "%s", path ? path : "");
+    snprintf(g_failure_reason, sizeof(g_failure_reason), "%s", strerror(error ? error : EIO));
+    sanitize_text(g_failure_path);
+    sanitize_text(g_failure_reason);
+}
+
 static int clean_manifest(void) {
     if (!g_options.manifest || !g_options.cursor || !g_options.report || !g_options.summary) die("missing clean paths");
     load_whitelist();
@@ -793,6 +827,7 @@ static int clean_manifest(void) {
                 summary.skipped++;
                 report_row(report, "protected", risk, 0U, path);
             } else {
+                note_failure(parent_error, path);
                 attempt_errors++; result = 8;
                 report_row(report, "failed", risk, 0U, path);
             }
@@ -806,6 +841,7 @@ static int clean_manifest(void) {
                     if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
                     report_row(report, "missing", risk, 0U, path);
                 } else {
+                    note_failure(errno, path);
                     attempt_errors++; result = 8;
                     report_row(report, "failed", risk, 0U, path);
                 }
@@ -818,6 +854,7 @@ static int clean_manifest(void) {
                     summary.skipped++;
                     report_row(report, "changed", risk, size, path);
                 } else {
+                    if (hash_code != 9) note_failure(hash_code == 124 ? ETIMEDOUT : EIO, path);
                     attempt_errors++; result = hash_code == 9 ? 9 : 8;
                     report_row(report, "failed", risk, 0U, path);
                 }
@@ -830,6 +867,7 @@ static int clean_manifest(void) {
                     if (current < replay_end) { summary.uncertain++; summary.uncertain_bytes += size; }
                     report_row(report, "missing", risk, 0U, path);
                 } else {
+                    note_failure(errno, path);
                     attempt_errors++; result = 8;
                     report_row(report, "failed", risk, 0U, path);
                 }
@@ -842,7 +880,12 @@ static int clean_manifest(void) {
                 summary.files++;
                 summary.bytes += size;
                 report_row(report, "cleaned", risk, size, path);
+            } else if (errno == ENOENT) {
+                /* Removed by its owner between the identity check and unlink: nothing failed. */
+                summary.skipped++;
+                report_row(report, "missing", risk, 0U, path);
             } else {
+                note_failure(errno, path);
                 attempt_errors++; result = 8;
                 report_row(report, "failed", risk, size, path);
             }
@@ -855,6 +898,7 @@ static int clean_manifest(void) {
                     if (current < replay_end) summary.uncertain++;
                     report_row(report, "missing", risk, 0U, path);
                 } else {
+                    note_failure(errno, path);
                     attempt_errors++; result = 8;
                     report_row(report, "failed", risk, 0U, path);
                 }
@@ -870,7 +914,11 @@ static int clean_manifest(void) {
             } else if (errno == ENOTEMPTY || errno == EEXIST) {
                 summary.skipped++;
                 report_row(report, "protected", risk, 0U, path);
+            } else if (errno == ENOENT) {
+                summary.skipped++;
+                report_row(report, "missing", risk, 0U, path);
             } else {
+                note_failure(errno, path);
                 attempt_errors++; result = 8;
                 report_row(report, "failed", risk, 0U, path);
             }
@@ -932,6 +980,7 @@ static int clean_manifest(void) {
             summary.dirs - initial.dirs, summary.bytes - initial.bytes, summary.errors - initial.errors + attempt_errors,
             g_options.checkpoint_records);
     fprintf(summary_file, "pending_errors=%" PRIu64 "\n", attempt_errors);
+    if (g_failure_path[0]) fprintf(summary_file, "failure_reason=%s\nfailure_path=%s\n", g_failure_reason, g_failure_path);
     if (ferror(summary_file)) result = 71;
     if (fclose(summary_file) != 0) result = 71;
     return result;

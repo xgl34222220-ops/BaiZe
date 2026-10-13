@@ -73,6 +73,7 @@
         <activity android:name=".PhotoCompressionActivity" android:exported="false" />
         <activity android:name=".RuleBundleActivity" android:exported="false" />
         <activity android:name=".FileTrashActivity" android:exported="false" />
+        <activity android:name=".RunDetailActivity" android:exported="false" />
         <activity android:name=".StorageToolsActivity" android:exported="false" />
         <activity android:name=".CleanCenterActivity" android:exported="false" />
         <activity android:name=".CleanupPolicyActivity" android:exported="false" />

@@ -268,7 +268,8 @@ class MiuixDashboardActivity : ComponentActivity() {
                     resetScanPerformance = { resetScanPerformance() },
                     crash = { showCrashDialog() },
                     wechatUsage = { loadWechatUsage(it) },
-                    cleanupAudit = { CleanerNavigation.open(this, Intent(this, AuditActivity::class.java)) }
+                    cleanupAudit = { CleanerNavigation.open(this, Intent(this, AuditActivity::class.java)) },
+                    recordDetail = { record -> CleanerNavigation.open(this, RunDetailActivity.intent(this, record)) }
                 ),
                 navigationRequest = navigationRequest.value,
                 onNavigationHandled = { navigationRequest.value = null },
@@ -1412,6 +1413,7 @@ class MiuixDashboardActivity : ComponentActivity() {
                                 .put("emptyDirs", emptyDirs)
                                 .put("fragments", fragments)
                                 .put("errors", failures)
+                                .put("detailItems", RunDetailItems.fromProtected(protectedItems))
                                 .put("elapsedSeconds", elapsed / 1000L)
                                 .put("result", resultLine)
                                 .put(
@@ -1733,7 +1735,8 @@ class MiuixDashboardActivity : ComponentActivity() {
             }
             val success = response.getOrNull()?.optBoolean("success") == true
             schedulerState.value = if (success) config.copy(saving = false) else savedBeforeRequest
-            toast(if (success) "设置已保存，调度器会自动读取" else "保存失败：${response.exceptionOrNull()?.message ?: "未知错误"}")
+            toast(if (success) "设置已保存，调度器会自动读取"
+                else "保存失败：${RootFailureMessage.of(response.getOrNull(), response.exceptionOrNull())}")
             if (success) FileOrganizerWorker.ensureWatchdog(this@MiuixDashboardActivity)
             loadScheduler()
             refreshModuleState()
@@ -1784,7 +1787,7 @@ class MiuixDashboardActivity : ComponentActivity() {
             val success = json?.optBoolean("success") == true
             toast(
                 if (success) json?.optString("message").orEmpty().ifBlank { "性能基准已清除" }
-                else "重置失败：${json?.optString("error").orEmpty().ifBlank { response.exceptionOrNull()?.message ?: "未知错误" }}"
+                else "重置失败：${RootFailureMessage.of(json, response.exceptionOrNull())}"
             )
             refreshModuleState()
         }
@@ -1900,7 +1903,12 @@ class MiuixDashboardActivity : ComponentActivity() {
                             releaseState = item.optString("releaseState", "unknown"),
                             recordId = item.optString("recordId"),
                             categories = parseHistoryCategories(item.optJSONArray("categoryDetails")),
-                            apps = parseHistoryApps(item.optJSONArray("appDetails"))
+                            apps = parseHistoryApps(item.optJSONArray("appDetails")),
+                            failures = parseHistoryFailures(item.optJSONArray("failureDetails")),
+                            skipped = item.optLong("skipped", 0L).coerceAtLeast(0L),
+                            skipGroups = parseHistorySkips(item.optJSONArray("skipGroups")),
+                            detailId = item.optString("detailId"),
+                            mode = item.optString("mode")
                         )
                     )
                 }
@@ -1931,6 +1939,32 @@ class MiuixDashboardActivity : ComponentActivity() {
                 lifetimeFragments = moduleFragments,
                 lifetimeElapsed = moduleElapsed + appHistory.lifetimeElapsed
             )
+        }
+    }
+
+    private fun parseHistorySkips(array: JSONArray?): List<HistorySkipUiItem> = buildList {
+        if (array == null) return@buildList
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            add(HistorySkipUiItem(
+                code = item.optString("code").trim(),
+                label = item.optString("label").trim().ifBlank { "已跳过" },
+                count = item.optLong("count", 0L).coerceAtLeast(0L),
+                samplePath = item.optString("samplePath").trim()
+            ))
+        }
+    }
+
+    private fun parseHistoryFailures(array: JSONArray?): List<HistoryFailureUiItem> = buildList {
+        if (array == null) return@buildList
+        for (index in 0 until array.length()) {
+            val item = array.optJSONObject(index) ?: continue
+            add(HistoryFailureUiItem(
+                category = item.optString("category").trim(),
+                count = item.optLong("count", 0L).coerceAtLeast(0L),
+                reason = item.optString("reasonText").trim().ifBlank { item.optString("reason").trim() },
+                samplePath = item.optString("samplePath").trim()
+            ))
         }
     }
 

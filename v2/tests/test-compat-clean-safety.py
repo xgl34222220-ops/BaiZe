@@ -224,7 +224,7 @@ class CompatSafety(unittest.TestCase):
         fixture = self.fixture('apk', 'denied')
         result, fields = self.execute(fixture)
         self.assertEqual(fields['files'], '0', result.stdout)
-        self.assertEqual(result.returncode, 8, result.stdout)
+        self.assertEqual(result.returncode, 10, result.stdout)
         self.assertGreater(int(fields['errors']), 0)
         self.assertNotIn('清理完成', fields['result'])
 
@@ -235,8 +235,67 @@ class CompatSafety(unittest.TestCase):
                 fixture = self.fixture(route, incomplete=True)
                 result, fields = self.execute(fixture)
                 self.assertTrue(fixture[2].exists(), result.stdout + result.stderr)
-                self.assertEqual(result.returncode, 8, result.stdout)
-                self.assertGreater(int(fields['errors']), 0)
+                # 3.3.4: BaiZe deleted nothing in an incompletely read directory. That is a
+                # skip (目录读取不完整), not a failure: no 失败 badge, no exit 10.
+                self.assertEqual(result.returncode, 0, result.stdout)
+                self.assertEqual(fields['errors'], '0')
+                self.assertGreater(int(fields['skipped']), 0)
+                row = (fixture[1] / 'history.tsv').read_text().splitlines()[-1].split('\t')
+                self.assertEqual(row[5], '0')
+                tokens = row[12].split(';')
+                self.assertEqual(tokens[0], '~v2', row[12])
+                self.assertTrue(any(t.startswith('~skip|unreadable|') for t in tokens), row[12])
+                self.assertFalse([t for t in tokens if not t.startswith('~')], row[12])
+                detail_id = [t for t in tokens if t.startswith('~detail|')][0].split('|', 1)[1]
+                detail = (fixture[1] / 'run-details' / f'{detail_id}.tsv').read_text().splitlines()
+                items = [line.split('\t') for line in detail if not line.startswith('#')]
+                self.assertTrue(items and all(i[0] == 'skipped' and i[1] == 'unreadable' for i in items), detail)
+
+    # 3.3.4: a directory that hits the traversal time budget is a skip for this run,
+    # not a failed task; on 3.3.3 it produced 有异常 and an every-minute scheduler retry.
+    def test_traversal_timeout_is_skipped_not_failed(self):
+        for route in ('empty', 'hidden'):
+            with self.subTest(route=route):
+                self.tmp = Path(tempfile.mkdtemp(dir=self.base))
+                fixture = self.fixture(route, collect_exit=124)
+                result, fields = self.execute(fixture)
+                self.assertTrue(fixture[2].exists(), result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(fields['errors'], '0')
+                self.assertGreater(int(fields['skipped']), 0)
+                row = (fixture[1] / 'history.tsv').read_text().splitlines()[-1].split('\t')
+                self.assertEqual(row[5], '0')
+                tokens = row[12].split(';')
+                self.assertEqual(tokens[0], '~v2', row[12])
+                self.assertTrue(any(t.startswith('~skip|slow|') for t in tokens), row[12])
+                self.assertFalse([t for t in tokens if not t.startswith('~')], row[12])
+
+    def test_real_failures_are_listed_with_reason_in_history(self):
+        fixture = self.fixture('apk', 'unlink_denied')
+        result, fields = self.execute(fixture)
+        if self.denied:
+            self.denied.chmod(0o700); self.denied = None
+        self.assertEqual(result.returncode, 10, result.stdout + result.stderr)
+        row = (fixture[1] / 'history.tsv').read_text().splitlines()[-1].split('\t')
+        self.assertEqual(13, len(row), row)
+        self.assertGreater(int(row[5]), 0)
+        tokens = row[12].split(';')
+        self.assertEqual(tokens[0], '~v2', row[12])
+        category, count, reason, sample = [t for t in tokens if not t.startswith('~')][0].split('|', 3)
+        self.assertTrue(category)
+        self.assertGreater(int(count), 0)
+        self.assertNotEqual('', reason)
+        self.assertTrue(sample.endswith('old.apk'), row[12])
+        # The per-run detail file lists the item with the kernel's reason.
+        detail_id = [t for t in tokens if t.startswith('~detail|')][0].split('|', 1)[1]
+        detail = (fixture[1] / 'run-details' / f'{detail_id}.tsv').read_text().splitlines()
+        failed = [line.split('\t') for line in detail if line.startswith('failed\t')]
+        self.assertTrue(failed, detail)
+        self.assertTrue(failed[0][5].endswith('old.apk'), failed)
+        self.assertNotEqual('', failed[0][6])
+        # No scratch files survive the run.
+        leftovers = [p.name for p in (fixture[1] / 'run-details').iterdir() if p.name.startswith('.')]
+        self.assertEqual([], leftovers)
 
     def test_cancelled_traversal_stays_cancelled_and_never_deletes(self):
         for route in ('empty', 'rules', 'fragment', 'hidden', 'installer'):
@@ -278,7 +337,7 @@ class CompatSafety(unittest.TestCase):
                 result, fields = self.execute(fixture)
                 if self.denied:
                     self.denied.chmod(0o700); self.denied = None
-                self.assertEqual(result.returncode, 8 if action == 'unlink_denied' else 0, result.stdout)
+                self.assertEqual(result.returncode, 10 if action == 'unlink_denied' else 0, result.stdout)
                 self.assertEqual(fields['files'], '0')
                 self.assertEqual(fields['missing_files'], '1' if action == 'missing' else '0')
                 self.assertEqual((self.tmp / 'deleted.nul').read_bytes(), b'')
@@ -316,7 +375,7 @@ class CompatSafety(unittest.TestCase):
         self.assertIn(old, helper.read_text())
         helper.write_text(helper.read_text().replace(old, replacement))
         result, fields = self.execute(fixture)
-        self.assertEqual(result.returncode, 8, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 10, result.stdout + result.stderr)
         self.assertFalse(fixture[2].exists())
         self.assertTrue(second.exists())
         self.assertEqual(fields['files'], '1')
@@ -328,7 +387,7 @@ class CompatSafety(unittest.TestCase):
         fixture = self.fixture('apk')
         (fixture[0] / 'bin/x86_64/baize_compat_filter').unlink()
         result, fields = self.execute(fixture)
-        self.assertEqual(result.returncode, 8, result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 10, result.stdout + result.stderr)
         self.assertTrue(fixture[2].exists())
         self.assertEqual(fields['files'], '0')
         self.assertGreater(int(fields['errors']), 0)
